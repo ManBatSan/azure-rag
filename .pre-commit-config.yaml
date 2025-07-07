@@ -1,0 +1,29 @@
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.1.0
+    hooks:
+      - id: black
+        language: system
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        language: system
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.269
+    hooks:
+      - id: ruff
+        language: system
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.16.1
+    hooks:
+      - id: mypy
+        language: system
+        args:
+          - --config-file=pyproject.toml
+          - --install-types
+          - --non-interactive
