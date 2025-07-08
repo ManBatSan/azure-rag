@@ -54,6 +54,7 @@ azure-rag/
    ```bash
    conda create -n azure-rag python=3.11 -y
    conda activate azure-rag
+   pip install -e .
    ```
 
 3. **Install pre-commit hooks**  
@@ -68,8 +69,15 @@ azure-rag/
 
 4. **Download the ioASQ13 data**  
    ```bash
-   python3 scripts/download_data.py --dataset enelpol/rag-mini-bioasq --config question-answer-passages
-   python3 scripts/download_data.py --dataset enelpol/rag-mini-bioasq --config text-corpus
+   python data-downloader/download_data.py \
+   --dataset enelpol/rag-mini-bioasq \
+   --config question-answer-passages \
+   --out_dir data/raw
+
+   python data-downloader/download_data.py \
+   --dataset enelpol/rag-mini-bioasq \
+   --config text-corpus \
+   --out_dir data/raw
    ```
 
 5. **Provision Azure services** using IaC in `infrastructure/`.  
@@ -77,13 +85,23 @@ azure-rag/
    # example for Terraform
    cd infrastructure/terraform
    terraform init
+   terraform plan
    terraform apply
+   sh deploy_services.sh
    ```
 
 6. **Run ingestion & embedding**  
    ```bash
-   python3 ingestion/chunk_data.py
-   python3 embeddings/generate_embeddings.py
+   python ingestion/chunk.py \
+  --size 500 \
+  --overlap 100 \
+  --input data/processed/text-corpus_test.jsonl \
+  --output data/processed/chunks.jsonl
+
+   python embeddings/azure_embeddings.py \
+   --input data/processed/chunks.jsonl \
+   --output data/processed/embeddings.jsonl
+
    ```
 
 7. **Start the API**  

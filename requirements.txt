@@ -1,2 +1,9 @@
 datasets
+tokenizers
 az-cli
+azure.identity
+azure-ai-inference
+openai
+transformers
+python-dotenv
+scikit-learn
