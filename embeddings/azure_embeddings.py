@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import json
 import os
@@ -13,86 +14,93 @@ load_dotenv(override=True)
 
 endpoint = os.environ["EMBEDDINGS_ENDPOINT"]
 key = os.environ["EMBEDDINGS_KEY"]
-
-client = EmbeddingsClient(
-    endpoint=endpoint,
-    credential=AzureKeyCredential(key),
-)
+client = EmbeddingsClient(endpoint=endpoint, credential=AzureKeyCredential(key))
 
 
 def embed_text_batch(texts: list[str], model: str) -> list[list[float]]:
-    """Call the Azure OpenAI embeddings endpoint, retrying on 429."""
     while True:
         try:
             resp = client.embed(model=model, input=texts)
             return [e.embedding for e in resp.data]
         except HttpResponseError as e:
             if e.status_code == 429:
-                retry_after = 60
-                print(f"\nRate limit hit (429). Waiting {retry_after}s before retry...")
-                time.sleep(retry_after)
+                time.sleep(60)
                 continue
             raise
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate embeddings for chunked texts via Azure OpenAI"
-    )
-    parser.add_argument(
-        "--input",
-        "-i",
-        required=True,
-        help="Path to input JSONL file of chunks (with a 'text' field)",
-    )
-    parser.add_argument(
-        "--output", "-o", required=True, help="Path to output JSONL file for embeddings"
-    )
-    parser.add_argument(
-        "--batch-size", "-b", type=int, default=64, help="Number of texts to send per API call"
-    )
-    parser.add_argument(
-        "--model",
-        "-m",
-        default="text-embedding-3-small",
-        help="Azure OpenAI embedding model to use",
-    )
-    args = parser.parse_args()
+    p = argparse.ArgumentParser()
+    p.add_argument("-i", "--input", required=True, help="JSONL of chunks with id & text")
+    p.add_argument("-o", "--output", required=True, help="JSONL for embeddings (will include id)")
+    p.add_argument("-b", "--batch-size", type=int, default=64)
+    p.add_argument("-m", "--model", default="text-embedding-3-small")
+    args = p.parse_args()
 
-    # First, count total chunks so tqdm knows the length
+    # Count total
     with open(args.input, encoding="utf-8") as f:
-        total_chunks = sum(1 for _ in f)
+        total = sum(1 for _ in f)
 
     buffer = []
-    processed = 0
+    meta_buffer = []
     out_fp = open(args.output, "w", encoding="utf-8")
+    processed = 0
 
-    # Re-open to iterate
-    with open(args.input, encoding="utf-8") as f, tqdm(total=total_chunks, unit="chunk") as pbar:
-        for line in f:
+    with open(args.input, encoding="utf-8") as fin, tqdm(total=total) as bar:
+        for line in fin:
             rec = json.loads(line)
             buffer.append(rec["text"])
-
+            meta_buffer.append(
+                {
+                    "id": rec["id"],
+                    "source_id": rec.get("source_id"),
+                    "chunk_index": rec.get("chunk_index"),
+                    "text": rec["text"],
+                }
+            )
             if len(buffer) >= args.batch_size:
                 embs = embed_text_batch(buffer, args.model)
-                for txt, vec in zip(buffer, embs):
+                for meta, vec in zip(meta_buffer, embs):
                     out_fp.write(
-                        json.dumps({"text": txt, "embedding": vec}, ensure_ascii=False) + "\n"
+                        json.dumps(
+                            {
+                                "id": meta["id"],
+                                "source_id": meta["source_id"],
+                                "chunk_index": meta["chunk_index"],
+                                "text": meta["text"],
+                                "embedding": vec,
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n"
                     )
                     processed += 1
-                    pbar.update(1)
-                buffer = []
+                    bar.update(1)
+                buffer.clear()
+                meta_buffer.clear()
 
-        # flush remainder
+        # Flush remainder
         if buffer:
             embs = embed_text_batch(buffer, args.model)
-            for txt, vec in zip(buffer, embs):
-                out_fp.write(json.dumps({"text": txt, "embedding": vec}, ensure_ascii=False) + "\n")
+            for meta, vec in zip(meta_buffer, embs):
+                out_fp.write(
+                    json.dumps(
+                        {
+                            "id": meta["id"],
+                            "source_id": meta["source_id"],
+                            "chunk_index": meta["chunk_index"],
+                            "text": meta["text"],
+                            "embedding": vec,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
                 processed += 1
-                pbar.update(1)
+                bar.update(1)
 
     out_fp.close()
-    print(f"\nWrote {processed} embeddings to {args.output}")
+    print(f"Wrote {processed} embeddings with IDs to {args.output}")
 
 
 if __name__ == "__main__":

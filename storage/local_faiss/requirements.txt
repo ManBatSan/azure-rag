@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+faiss-gpu-cu12
+numpy
+pydantic
